@@ -1,0 +1,5 @@
+window.FUSION_CONFIG = window.FUSION_CONFIG || {
+  GOOGLE_CLIENT_ID: "",
+  GOOGLE_API_KEY: "",
+  GOOGLE_APP_ID: ""
+};

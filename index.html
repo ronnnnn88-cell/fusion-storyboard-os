@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fusion Storyboard OS V4.2</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./config.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+</head>
+<body>
+  <header class="topbar no-print">
+    <div>
+      <p class="eyebrow">Commercial Storyboard Planning</p>
+      <h1>Fusion Storyboard OS V4.2</h1>
+    </div>
+    <div class="top-actions">
+      <span id="saveStatus" class="save-status saved">Local Saved</span>
+      <div id="driveControls" class="drive-controls" aria-label="Google Drive controls">
+        <span id="driveStatus" class="save-status drive-status">Drive Disconnected</span>
+        <button id="connectDriveBtn" class="ghost" type="button">Connect Google Drive</button>
+        <div id="connectedDriveActions" class="drive-connected-actions hidden">
+          <button id="openDriveBtn" class="ghost" type="button">Open From Drive</button>
+          <button id="saveDriveBtn" class="ghost" type="button">Save To Drive</button>
+          <button id="saveAsDriveBtn" class="ghost" type="button">Save As New Drive File</button>
+          <label class="drive-auto-save"><input id="driveAutoSaveToggle" type="checkbox"> Auto Save</label>
+          <button id="disconnectDriveBtn" class="ghost" type="button">Disconnect</button>
+        </div>
+      </div>
+      <button id="homeBtn" class="ghost hidden" type="button">Projects</button>
+      <button id="exportJsonBtn" class="ghost" type="button">Export Local JSON Backup</button>
+      <button id="exportPackageBtn" class="ghost" type="button">Export Package</button>
+      <label class="button ghost file-button">
+        Import Local JSON Backup
+        <input id="importJsonInput" type="file" accept="application/json,.json">
+      </label>
+      <label class="button ghost file-button">
+        Import Project Package
+        <input id="importPackageInput" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+      </label>
+    </div>
+  </header>
+
+  <main>
+    <section id="projectListView" class="view">
+      <div class="toolbar no-print">
+        <div>
+          <h2>Projects</h2>
+          <p>Plan brand films, product videos, interviews, Reels, Shorts and client proposals.</p>
+        </div>
+        <button id="newProjectBtn" class="primary" type="button">New Project</button>
+      </div>
+
+      <div class="filters no-print">
+        <input id="projectSearch" type="search" placeholder="Search project, client or brand">
+        <select id="projectStatusFilter">
+          <option value="">All Status</option>
+        </select>
+      </div>
+
+      <div id="projectGrid" class="project-grid"></div>
+    </section>
+
+    <section id="projectDetailView" class="view hidden">
+      <div id="printArea">
+        <div class="detail-head">
+          <div>
+            <p id="projectMeta" class="eyebrow"></p>
+            <h2 id="projectTitle"></h2>
+            <p id="projectSubtitle"></p>
+          </div>
+          <div class="detail-actions no-print">
+            <button id="editProjectBtn" class="ghost" type="button">Edit Project</button>
+            <button id="newShotBtn" class="primary" type="button">New Shot</button>
+            <select id="pdfVersionSelect" class="compact-select" aria-label="PDF version">
+              <option value="client">Client Proposal Version</option>
+              <option value="director">Director Version</option>
+              <option value="production">Production Version</option>
+              <option value="editor">Editor Version</option>
+            </select>
+            <button id="exportPdfBtn" class="ghost" type="button">Export PDF</button>
+            <button id="exportCsvBtn" class="ghost" type="button">Export CSV</button>
+          </div>
+        </div>
+
+        <div id="dashboard" class="dashboard"></div>
+        <div id="storageHealth" class="storage-health no-print"></div>
+        <div id="sequenceBar" class="sequence-bar no-print"></div>
+
+        <div class="shot-filters no-print">
+          <div class="filter-title">Shot Filters</div>
+          <select id="filterStatus"><option value="">All Status</option></select>
+          <select id="filterPriority"><option value="">All Priority</option></select>
+          <select id="filterLocation"><option value="">All Locations</option></select>
+          <select id="filterPurpose"><option value="">All Purposes</option></select>
+          <select id="filterMustHave">
+            <option value="">Must Have: All</option>
+            <option value="yes">Must Have Only</option>
+            <option value="no">Not Must Have</option>
+          </select>
+          <select id="filterHook">
+            <option value="">Hook: All</option>
+            <option value="yes">Hook Only</option>
+            <option value="no">Not Hook</option>
+          </select>
+          <input id="filterProps" type="search" placeholder="Props keyword">
+          <button id="clearFiltersBtn" class="ghost" type="button">Clear Filters</button>
+        </div>
+
+        <div class="workbar no-print">
+          <div class="segmented">
+            <button id="cardViewBtn" class="active" type="button">Card View</button>
+            <button id="listViewBtn" type="button">Shot List View</button>
+            <button id="shootModeBtn" type="button">Shoot Mode</button>
+          </div>
+          <div class="workbar-actions">
+            <button id="scriptToolBtn" class="ghost" type="button">Script to Storyboard</button>
+            <button id="renumberBtn" class="ghost" type="button">Renumber</button>
+            <button id="optimizeBtn" class="ghost" type="button">Optimize Shooting Order</button>
+            <button id="callSheetBtn" class="ghost" type="button">Generate Call Sheet</button>
+          </div>
+        </div>
+
+        <div class="batchbar no-print">
+          <div class="filter-title">Batch Actions</div>
+          <select id="batchStatus">
+            <option value="">Set Status...</option>
+            <option value="Not Shot">Not Shot</option>
+            <option value="Shot">Shot</option>
+            <option value="Need Reshoot">Need Reshoot</option>
+            <option value="Optional">Optional</option>
+            <option value="Removed">Removed</option>
+          </select>
+          <input id="batchLocation" placeholder="Set location for filtered shots">
+          <input id="batchShootTime" placeholder="Set shoot time for filtered shots">
+          <button id="applyBatchBtn" class="ghost" type="button">Apply To Filtered</button>
+        </div>
+
+        <div id="shotCards" class="shot-grid"></div>
+        <div id="shootModeTools" class="shoot-mode-tools no-print hidden">
+          <div id="shootProgress"></div>
+          <button id="nextShotBtn" class="primary" type="button">Next Shot</button>
+        </div>
+        <div id="shootMode" class="shoot-mode hidden"></div>
+        <div id="shotTableWrap" class="table-wrap hidden">
+          <table>
+            <thead>
+              <tr>
+                <th>Shot</th>
+                <th>Scene</th>
+                <th>Description</th>
+                <th>Size</th>
+                <th>Lens</th>
+                <th>Movement</th>
+                <th>Location</th>
+                <th>Priority</th>
+                <th>Status</th>
+                <th>Props</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="shotTableBody"></tbody>
+          </table>
+        </div>
+
+        <section id="callSheetPanel" class="panel hidden">
+          <div class="panel-head">
+            <h3>Call Sheet</h3>
+            <div class="no-print">
+              <button id="copyCallSheetBtn" class="ghost" type="button">Copy</button>
+              <button id="printCallSheetBtn" class="ghost" type="button">Print</button>
+            </div>
+          </div>
+          <pre id="callSheetOutput"></pre>
+          <textarea id="manualCopyText" class="manual-copy hidden" readonly></textarea>
+        </section>
+
+        <section id="optimizePanel" class="panel hidden">
+          <div class="panel-head">
+            <h3>Suggested Shooting Order</h3>
+          </div>
+          <div id="optimizeOutput"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+
+  <dialog id="sequencePickerDialog">
+    <form method="dialog" class="modal-form sequence-picker-form">
+      <div class="modal-head">
+        <h3 id="sequencePickerTitle">Add Existing Shot</h3>
+        <button class="icon-btn" value="cancel" type="button" data-close-dialog>&times;</button>
+      </div>
+      <div id="sequencePickerList" class="sequence-picker-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close-dialog>Close</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="projectDialog">
+    <form id="projectForm" method="dialog" class="modal-form">
+      <div class="modal-head">
+        <h3 id="projectDialogTitle">Project</h3>
+        <button class="icon-btn" value="cancel" type="button" data-close-dialog>&times;</button>
+      </div>
+      <div class="form-grid">
+        <label>Project Name<input name="title" required></label>
+        <label>Client Name<input name="clientName"></label>
+        <label>Brand Name<input name="brandName"></label>
+        <label>Project Type<select name="projectType" required></select></label>
+        <label>Shooting Date<input name="shootingDate" type="date"></label>
+        <label>Platforms<select name="platforms" multiple></select></label>
+        <label>Aspect Ratio<select name="aspectRatio" required></select></label>
+        <label>Project Status<select name="status" required></select></label>
+        <label class="span-2">Notes<textarea name="notes" rows="4"></textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close-dialog>Cancel</button>
+        <button type="submit" class="primary">Save Project</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="shotDialog">
+    <form id="shotForm" method="dialog" class="modal-form wide">
+      <div class="modal-head">
+        <h3 id="shotDialogTitle">Shot</h3>
+        <button class="icon-btn" value="cancel" type="button" data-close-dialog>&times;</button>
+      </div>
+      <div class="form-section">
+        <h4>Basic</h4>
+        <div class="form-grid">
+          <label>Shot Number<input name="shotNumber"></label>
+          <label>Scene<input name="scene"></label>
+          <label class="span-2">Description<textarea name="description" rows="3"></textarea></label>
+          <label>Shot Size<select name="shotSize"></select></label>
+          <label>Lens<select name="lens"></select></label>
+          <label>Camera Movement<select name="cameraMovement"></select></label>
+          <label>Estimated Duration<input name="estimatedDuration" placeholder="3s"></label>
+          <label>Location<input name="location"></label>
+          <label>Shoot Time<input name="shootTime" placeholder="Morning / 9:30 AM"></label>
+          <label>Status<select name="status"></select></label>
+          <label>Priority<select name="priority"></select></label>
+          <label class="span-2">Notes<textarea name="notes" rows="2"></textarea></label>
+        </div>
+      </div>
+      <div class="form-section">
+        <h4>Commercial Content</h4>
+        <div class="form-grid">
+          <label>Shot Purpose<select name="shotPurpose"></select></label>
+          <label>Product / Brand Focus<input name="productOrBrandFocus"></label>
+          <label>Suitable Platforms<select name="platforms" multiple></select></label>
+          <label>Caption Idea<input name="captionIdea"></label>
+          <label class="check"><input name="isHook" type="checkbox"> Hook opening</label>
+          <label class="check"><input name="isMustHave" type="checkbox"> Must shoot</label>
+          <label class="check"><input name="isReplaceable" type="checkbox"> Replaceable</label>
+          <label class="span-2">Post Production Notes<textarea name="postProductionNotes" rows="2"></textarea></label>
+          <label class="span-2">AI Image Prompt<textarea name="aiImagePrompt" rows="3"></textarea></label>
+        </div>
+      </div>
+      <div class="form-section">
+        <h4>Sound</h4>
+        <div class="form-grid">
+          <label>Ambient Sound<input name="soundNotes"></label>
+          <label>Voice / VO<input name="voiceOverNotes"></label>
+          <label>Music Mood<input name="musicMood"></label>
+          <label class="check"><input name="needsAudioRecording" type="checkbox"> Needs location audio</label>
+        </div>
+      </div>
+      <div class="form-section">
+        <h4>Art Direction</h4>
+        <div class="form-grid">
+          <label>Props<input name="props"></label>
+          <label>Background<input name="background"></label>
+          <label>Lighting Mood<input name="lightingMood"></label>
+          <label>Wardrobe / Styling<input name="wardrobeOrStyling"></label>
+          <label class="check"><input name="needsArtDirection" type="checkbox"> Needs art prep</label>
+          <label>Reference Type<select name="referenceType"></select></label>
+          <label class="span-2">Reference Images<input id="referenceImageInput" type="file" accept="image/*" multiple></label>
+          <div id="referencePreview" class="reference-preview span-2"></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="generatePromptInFormBtn" class="ghost">Generate Image Prompt</button>
+        <button type="button" class="ghost" data-close-dialog>Cancel</button>
+        <button type="submit" class="primary">Save Shot</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="scriptDialog">
+    <form id="scriptForm" method="dialog" class="modal-form wide">
+      <div class="modal-head">
+        <h3>Script to Storyboard</h3>
+        <button class="icon-btn" value="cancel" type="button" data-close-dialog>&times;</button>
+      </div>
+      <label>Script Text<textarea id="scriptInput" rows="9" placeholder="老板早上打开咖啡店的门，阳光照进室内。他开始磨豆、冲咖啡、和客人打招呼。最后镜头落在一杯热咖啡上。"></textarea></label>
+      <p class="hint">Rule-based demo: punctuation and line breaks become shots. Future versions can replace generateStoryboardFromScript(scriptText) with an AI API.</p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close-dialog>Cancel</button>
+        <button type="submit" class="primary">Generate Shots</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="imagePreviewDialog" class="image-preview-dialog">
+    <div class="image-preview-inner">
+      <button id="closeImagePreviewBtn" class="icon-btn image-preview-close" type="button">&times;</button>
+      <img id="imagePreviewImg" alt="">
+      <div id="imagePreviewCaption" class="image-preview-caption"></div>
+    </div>
+  </dialog>
+
+  <dialog id="driveFolderDialog">
+    <div class="modal-form drive-modal-form">
+      <div class="modal-head">
+        <div><h3>Choose Drive Folder</h3><p class="hint">This folder stores project packages created by Fusion Storyboard OS.</p></div>
+        <button class="icon-btn" type="button" data-close-dialog>&times;</button>
+      </div>
+      <div class="drive-choice-grid">
+        <button id="createDriveFolderBtn" class="primary" type="button">Create Fusion Storyboard OS Folder</button>
+        <button id="chooseDriveFolderBtn" class="ghost" type="button">Choose Existing Drive Folder</button>
+      </div>
+      <p id="driveFolderMessage" class="hint"></p>
+    </div>
+  </dialog>
+
+  <dialog id="driveBrowserDialog">
+    <div class="modal-form drive-modal-form">
+      <div class="modal-head">
+        <div><h3>Open From Google Drive</h3><p id="driveBrowserFolder" class="hint"></p></div>
+        <button class="icon-btn" type="button" data-close-dialog>&times;</button>
+      </div>
+      <div class="drive-browser-actions">
+        <button id="pickDriveFileBtn" class="ghost" type="button">Choose Drive File</button>
+        <button id="refreshDriveFilesBtn" class="ghost" type="button">Refresh</button>
+      </div>
+      <div id="driveFileList" class="drive-file-list"></div>
+    </div>
+  </dialog>
+
+  <dialog id="cloudConflictDialog">
+    <div class="modal-form drive-modal-form">
+      <div class="modal-head"><h3>Cloud Conflict Detected</h3></div>
+      <p>This Drive file was modified after you opened it.</p>
+      <p id="cloudConflictDetails" class="hint"></p>
+      <div class="cloud-decision-grid">
+        <button type="button" data-conflict-action="download">Download Latest Version</button>
+        <button type="button" data-conflict-action="save-as">Save My Version As New File</button>
+        <button type="button" class="danger" data-conflict-action="force">Force Overwrite</button>
+        <button type="button" class="ghost" data-conflict-action="cancel">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="cloudUnsavedDialog">
+    <div class="modal-form drive-modal-form">
+      <div class="modal-head"><h3>Drive Changes Pending</h3></div>
+      <p>Your local project has changes that have not been saved to Google Drive.</p>
+      <div class="cloud-decision-grid">
+        <button type="button" class="primary" data-unsaved-action="save">Save To Drive First</button>
+        <button type="button" data-unsaved-action="export">Export Package</button>
+        <button type="button" class="danger" data-unsaved-action="discard">Discard Local Changes</button>
+        <button type="button" class="ghost" data-unsaved-action="cancel">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="packageExportDialog">
+    <div class="modal-form drive-modal-form">
+      <div class="modal-head">
+        <h3>Export Package</h3>
+        <button class="icon-btn" type="button" data-close-dialog>&times;</button>
+      </div>
+      <p class="hint">Packages contain project data and IndexedDB reference images.</p>
+      <div class="drive-choice-grid">
+        <button id="exportCurrentPackageBtn" class="primary" type="button">Export Current Project Package</button>
+        <button id="exportAllPackageBtn" class="ghost" type="button">Export All Projects Backup</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="./script.js"></script>
+</body>
+</html>
