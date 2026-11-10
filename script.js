@@ -69,6 +69,7 @@ let unsavedDialogResolver = null;
 let driveStatusState = "disconnected";
 let driveStatusMessage = "Drive Disconnected";
 let driveTokenExpiresAt = 0;
+let driveConnecting = false;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -163,6 +164,8 @@ function bindEvents() {
   $("#homeBtn").addEventListener("click", showProjectList);
   $("#editProjectBtn").addEventListener("click", () => openProjectDialog(currentProject()));
   $("#newShotBtn").addEventListener("click", () => openShotDialog());
+  $("#importPhotoShotsBtn")?.addEventListener("click", () => $("#importPhotoShotsInput").click());
+  $("#importPhotoShotsInput")?.addEventListener("change", importPhotoShots);
   $("#cardViewBtn").addEventListener("click", () => setView("card"));
   $("#listViewBtn").addEventListener("click", () => setView("list"));
   $("#shootModeBtn").addEventListener("click", () => setView("shoot"));
@@ -508,10 +511,9 @@ function deleteSequence() {
   if (saveProjects()) renderProjectDetail();
 }
 
-function addShotToSequence(shotId, sequenceId, allowDuplicate = false) {
-  const project = currentProject();
-  ensureProjectSequences(project);
-  const sequence = project.sequences.find((item) => item.id === sequenceId);
+function addShotToSequence(shotId, sequenceId, allowDuplicate = false, project = currentProject()) {
+  if (project === currentProject()) ensureProjectSequences(project);
+  const sequence = project.sequences?.find((item) => item.id === sequenceId);
   if (!sequence) return false;
   if (!allowDuplicate && sequence.shotRefs.some((ref) => ref.shotId === shotId)) return false;
   sequence.shotRefs.push({
@@ -1222,6 +1224,68 @@ function updateShotStatus(event) {
   shot.status = event.currentTarget.value;
   currentProject().updatedAt = nowIso();
   if (saveProjects()) renderProjectDetail();
+}
+
+async function importPhotoShots(event) {
+  const input = event.currentTarget;
+  const files = Array.from(input.files || []);
+  input.value = "";
+  const project = currentProject();
+  const sequenceId = currentSequenceId;
+  if (!project || !files.length) return;
+  if (!imageDbAvailable) {
+    alert("IndexedDB is unavailable. Photos cannot be imported in this browser.");
+    return;
+  }
+  const button = $("#importPhotoShotsBtn");
+  if (button.disabled) return;
+  button.disabled = true;
+  const imported = [];
+  const failed = [];
+  try {
+    for (const file of files) {
+      button.textContent = "Importing " + (imported.length + failed.length + 1) + "/" + files.length + "...";
+      try {
+        const blob = await imageToBlob(file, 1600, .82);
+        const id = uid("ref");
+        const indexedDbKey = "image_" + id;
+        await saveImageBlob(indexedDbKey, blob);
+        imported.push({ id, fileName: file.name, type: "Client Reference", indexedDbKey, createdAt: nowIso() });
+      } catch (error) {
+        failed.push(file.name);
+        console.warn("Could not import photo", file.name, error);
+      }
+    }
+    if (!projects.includes(project)) {
+      await Promise.allSettled(imported.map((image) => deleteImageBlob(image.indexedDbKey)));
+      alert("The original project is no longer open in this workspace. No shots were added.");
+      return;
+    }
+    if (imported.length) {
+      let order = project.storyboards.reduce((max, shot) => Math.max(max, shot.order || 0), 0);
+      const usedNumbers = new Set(project.storyboards.map((shot) => shot.shotNumber));
+      for (const image of imported) {
+        do { order += 1; } while (usedNumbers.has(formatShotNumber(order)));
+        const shot = {
+          ...createBlankShot(order),
+          id: uid("shot"),
+          platforms: [...project.platforms],
+          scene: image.fileName.replace(/\.[^.]+$/, "") || image.fileName,
+          referenceImages: [image]
+        };
+        project.storyboards.push(shot);
+        if (sequenceId !== "master") addShotToSequence(shot.id, sequenceId, false, project);
+      }
+      project.updatedAt = nowIso();
+      const saved = saveProjects();
+      render();
+      if (!saved) alert("The new shots are available on this page. Export a project package before closing it.");
+    }
+    if (failed.length) alert(imported.length + " shot(s) created. " + failed.length + " photo(s) could not be imported:\n" + failed.slice(0, 10).join("\n"));
+  } finally {
+    button.disabled = false;
+    button.textContent = "Import Photos as Shots";
+  }
 }
 
 async function handleReferenceUpload(event) {
@@ -2032,8 +2096,10 @@ function renderDriveControls() {
   $("#saveAsDriveBtn").disabled = !connected || !currentProject();
   $("#openDriveBtn").disabled = !connected;
   const status = $("#driveStatus");
-  status.textContent = connected ? driveStatusMessage : "Drive Disconnected";
-  status.className = `save-status drive-status ${connected ? driveStatusState : "disconnected"}`;
+  const showStatus = connected || driveConnecting || driveStatusState === "failed";
+  $("#connectDriveBtn").disabled = driveConnecting;
+  status.textContent = showStatus ? driveStatusMessage : "Drive Disconnected";
+  status.className = `save-status drive-status ${showStatus ? driveStatusState : "disconnected"}`;
   status.title = currentDriveFile?.name ? `Current Drive file: ${currentDriveFile.name}` : "No current Drive file";
 }
 
@@ -2079,6 +2145,10 @@ async function waitForGoogleIdentity() {
 }
 
 async function connectGoogleDrive() {
+  if (driveConnecting) return;
+  driveConnecting = true;
+  setDriveStatus("saving", "Waiting for Google authorization");
+  let authorizationTimer;
   try {
     if (location.protocol === "file:") {
       throw new Error("Google Drive cannot authorize from file://. Open the app through GitHub Pages HTTPS or http://localhost:8080.");
@@ -2095,11 +2165,13 @@ async function connectGoogleDrive() {
         scope: DRIVE_SCOPE,
         callback: (response) => {
           if (response?.error) reject(new Error(response.error_description || response.error));
+          else if (!response?.access_token) reject(new Error("Google did not return an access token."));
           else resolve(response);
         },
         error_callback: (error) => reject(new Error(error?.message || "Authorization denied or browser popup blocked."))
       });
-      driveTokenClient.requestAccessToken({ prompt: "consent" });
+      authorizationTimer = setTimeout(() => reject(new Error("Google authorization timed out. Close the popup and reconnect.")), 120000);
+      driveTokenClient.requestAccessToken({ prompt: "" });
     });
     driveAccessToken = token.access_token;
     driveTokenExpiresAt = Date.now() + Math.max(60, Number(token.expires_in || 3600) - 60) * 1000;
@@ -2107,8 +2179,11 @@ async function connectGoogleDrive() {
     if (!safeStorageGet(localStorage, DRIVE_FOLDER_KEY)) $("#driveFolderDialog").showModal();
   } catch (error) {
     console.error("Google Drive connection failed", error);
-    setDriveStatus("failed", "Drive Connection Failed");
-    alert(error.message);
+    setDriveStatus("failed", `Drive Connection Failed: ${error.message}`);
+  } finally {
+    clearTimeout(authorizationTimer);
+    driveConnecting = false;
+    renderDriveControls();
   }
 }
 
@@ -2795,7 +2870,6 @@ function createDemoProject() {
 
 window.generateStoryboardFromScript = generateStoryboardFromScript;
 window.removePendingReference = removePendingReference;
-
 
 
 
