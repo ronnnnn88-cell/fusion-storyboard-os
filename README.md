@@ -1,6 +1,6 @@
-# Fusion Storyboard OS V4.2
+# Fusion Storyboard OS V4.3
 
-Fusion Storyboard OS V4.2 是一个纯 HTML、CSS、JavaScript 的商业视频分镜工具。V4.2 保留 V4 的全部本地功能，并新增 GitHub Pages + Google Drive 项目级云端存档。
+Fusion Storyboard OS V4.3 是一个纯 HTML、CSS、JavaScript 的商业视频分镜工具，保留 GitHub Pages + Google Drive 项目级云端存档。
 
 不需要 React、npm、Firebase、Supabase、传统后端或登录数据库。
 
@@ -223,6 +223,26 @@ images/
 ```
 
 Package Import 兼容 V3、V3.2、V4 和 V4.2 的 Fusion Storyboard OS package。新的 Drive 单项目文件也使用同一格式。
+
+## Photo Import Preview
+
+在项目里点击 **Import Photos as Shots** 并选择多张图片。确认前可以预览、拖动排序，或用上下箭头调整顺序，也可以移除不需要的图片。可批量指定 Sequence、Scene、Location 和 Priority；Scene 留空时使用原文件名。点击 **Create Shots** 后，每张成功导入的图片生成一颗 Master Shot；选定的 Sequence 会引用这些镜头，不会复制图片。取消预览不会保存图片或镜头。
+
+## Missing Must-Haves
+
+在项目工具栏点击 **Missing Must-Haves**，查看整个项目中尚未拍摄或需要补拍的必拍镜头，不受当前 Sequence 或筛选器限制。共用镜头在清单中只出现一次，并标注所属的 Sequence；各 Sequence 的漏拍数也会显示。将共用镜头标为 Shot 后，它会从所有相关 Sequence 的漏拍统计中移除。
+
+## Take Log and Editor Handoff
+
+在 **Shoot Mode** 或 **Card View** 点击镜头的 **Take Log**，填写素材编号、选用 Take 和现场备注。三个字段均可留空；保存不改变镜头的拍摄状态。记录跟随 Master Shot，会随项目 JSON、Package 和 Drive 项目保存。
+
+**Export CSV** 仍按当前视图和筛选导出，并新增 Take Log 栏位。**Editor Handoff CSV** 不受筛选限制，按当前 Sequence 顺序导出全部镜头，包含各版本的时长与用途、Take Log、旁白、声音、音乐、字幕和后期备注；在 All Shots 则导出 Master 顺序。
+
+## Project Templates
+
+打开一个项目，点 **Save as Template** 并命名。下次点 **New Project**，在 **Project Template** 选择它。模板保留项目类型、比例、平台、镜头骨架和 Sequence 排列。场景及 Sequence 名称会保留，建议在模板来源项目中使用通用名称；客户与品牌字段、日期、图片、拍摄状态、现场记录、项目备注和 Drive 关联不会复制。删除模板不会影响用它建立的项目。
+
+模板保存在当前浏览器的 localStorage，不包含在项目备份或 Drive 文件里。用模板创建的项目仍可以正常备份。
 
 ## Existing Features
 

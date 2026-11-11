@@ -1,5 +1,7 @@
-﻿const STORAGE_KEY = "fusion_storyboard_os_projects";
+const STORAGE_KEY = "fusion_storyboard_os_projects";
 const SCHEMA_VERSION = 5;
+const APP_VERSION = "4.3";
+const TEMPLATE_KEY = "fusion_storyboard_os_project_templates";
 const LAST_GOOD_KEY = "fusion_storyboard_os_last_good_projects";
 const IMAGE_DB_NAME = "fusion_storyboard_os_images";
 const IMAGE_STORE_NAME = "reference_images";
@@ -70,6 +72,8 @@ let driveStatusState = "disconnected";
 let driveStatusMessage = "Drive Disconnected";
 let driveTokenExpiresAt = 0;
 let driveConnecting = false;
+let photoImportDraft = null;
+let takeLogShot = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -157,6 +161,11 @@ function fillSelect(select, values, firstLabel) {
 function bindEvents() {
   $("#newProjectBtn").addEventListener("click", () => openProjectDialog());
   $("#projectForm").addEventListener("submit", saveProjectFromForm);
+  $("#projectTemplateSelect")?.addEventListener("change", applyProjectTemplateSettings);
+  $("#deleteTemplateBtn")?.addEventListener("click", deleteSelectedTemplate);
+  $("#saveTemplateBtn")?.addEventListener("click", openSaveTemplateDialog);
+  $("#saveTemplateForm")?.addEventListener("submit", saveProjectTemplate);
+  $("#takeLogForm")?.addEventListener("submit", saveTakeLog);
   $("#shotForm").addEventListener("submit", saveShotFromForm);
   $("#scriptForm").addEventListener("submit", handleScriptGenerate);
   $("#projectSearch").addEventListener("input", renderProjects);
@@ -165,13 +174,20 @@ function bindEvents() {
   $("#editProjectBtn").addEventListener("click", () => openProjectDialog(currentProject()));
   $("#newShotBtn").addEventListener("click", () => openShotDialog());
   $("#importPhotoShotsBtn")?.addEventListener("click", () => $("#importPhotoShotsInput").click());
-  $("#importPhotoShotsInput")?.addEventListener("change", importPhotoShots);
+  $("#importPhotoShotsInput")?.addEventListener("change", previewPhotoShots);
+  $("#photoImportForm")?.addEventListener("submit", importPhotoShots);
+  $("#photoImportDialog")?.addEventListener("cancel", (event) => {
+    if (photoImportDraft?.busy) event.preventDefault();
+  });
+  $("#photoImportDialog")?.addEventListener("close", clearPhotoImport);
+  $("#missingShotsBtn")?.addEventListener("click", showMissingShots);
   $("#cardViewBtn").addEventListener("click", () => setView("card"));
   $("#listViewBtn").addEventListener("click", () => setView("list"));
   $("#shootModeBtn").addEventListener("click", () => setView("shoot"));
   $("#renumberBtn").addEventListener("click", renumberShots);
   $("#exportPdfBtn").addEventListener("click", exportPDF);
   $("#exportCsvBtn").addEventListener("click", exportCSV);
+  $("#editorHandoffBtn")?.addEventListener("click", exportEditorHandoff);
   $("#exportJsonBtn").addEventListener("click", exportJSON);
   $("#exportPackageBtn").addEventListener("click", openPackageExportDialog);
   $("#exportCurrentPackageBtn").addEventListener("click", () => exportProjectPackage("current"));
@@ -251,6 +267,7 @@ function migrateProjects(projectList) {
       ...createBlankShot(index + 1),
       ...shot,
       id: shot.id || uid("shot"),
+      takeLog: normalizeTakeLog(shot.takeLog),
       order: Number.isFinite(Number(shot.order)) ? Number(shot.order) : index + 1,
       referenceImages: (shot.referenceImages || []).map((image) => ({
         id: image.id || uid("ref"),
@@ -664,7 +681,125 @@ function openProjectDialog(project) {
     notes: ""
   };
   setFormValues(form, data);
+  const templateFields = $("#projectTemplateFields");
+  if (templateFields) {
+    templateFields.classList.toggle("hidden", Boolean(project));
+    refreshProjectTemplateSelect();
+  }
   $("#projectDialog").showModal();
+}
+
+function readProjectTemplates() {
+  const value = JSON.parse(localStorage.getItem(TEMPLATE_KEY) || "[]");
+  if (!Array.isArray(value)) throw new Error("Invalid template data.");
+  return value;
+}
+
+function refreshProjectTemplateSelect() {
+  const select = $("#projectTemplateSelect");
+  if (!select) return;
+  select.replaceChildren(new Option("Blank Project", ""));
+  $("#deleteTemplateBtn").disabled = true;
+  try {
+    readProjectTemplates().forEach((template) => select.add(new Option(template.name, template.id)));
+  } catch (error) {
+    console.warn("Project templates unavailable", error);
+  }
+}
+
+function selectedProjectTemplate() {
+  const id = $("#projectTemplateSelect")?.value;
+  return id ? readProjectTemplates().find((template) => template.id === id) : null;
+}
+
+function applyProjectTemplateSettings() {
+  try {
+    const template = selectedProjectTemplate();
+    $("#deleteTemplateBtn").disabled = !template;
+    if (template) setFormValues($("#projectForm"), template.settings);
+  } catch (error) {
+    alert("Could not read the project template.");
+  }
+}
+
+function buildProjectTemplate(project, name) {
+  const shots = sortedShots(project);
+  const shotIndices = new Map(shots.map((shot, index) => [shot.id, index]));
+  return {
+    id: uid("template"), name,
+    settings: { projectType: project.projectType, aspectRatio: project.aspectRatio, platforms: [...project.platforms] },
+    shots: shots.map((shot) => ({
+      scene: shot.scene,
+      shotSize: shot.shotSize,
+      lens: shot.lens,
+      cameraMovement: shot.cameraMovement,
+      estimatedDuration: shot.estimatedDuration,
+      shotPurpose: shot.shotPurpose,
+      priority: shot.priority,
+      isMustHave: shot.isMustHave,
+      isHook: shot.isHook,
+      isReplaceable: shot.isReplaceable
+    })),
+    sequences: project.sequences.map((sequence) => ({
+      name: sequence.name,
+      refs: [...sequence.shotRefs].sort((a, b) => a.order - b.order)
+        .filter((ref) => shotIndices.has(ref.shotId))
+        .map((ref) => ({ index: shotIndices.get(ref.shotId), sequencePurpose: ref.sequencePurpose, sequenceDuration: ref.sequenceDuration }))
+    }))
+  };
+}
+
+function instantiateProjectTemplate(template, platforms, timestamp) {
+  const storyboards = template.shots.map((shot, index) => ({
+    ...createBlankShot(index + 1), ...shot, id: uid("shot"), platforms: [...platforms]
+  }));
+  const sequences = template.sequences.map((sequence) => ({
+    id: uid("seq"), name: sequence.name, description: "", createdAt: timestamp, updatedAt: timestamp,
+    shotRefs: sequence.refs.filter((ref) => storyboards[ref.index]).map((ref, index) => ({
+      id: uid("seqitem"), shotId: storyboards[ref.index].id, order: index + 1,
+      sequenceNotes: "", sequencePurpose: ref.sequencePurpose || "", sequenceDuration: ref.sequenceDuration || ""
+    }))
+  }));
+  return { storyboards, sequences };
+}
+
+function openSaveTemplateDialog() {
+  if (!currentProject()) return;
+  $("#saveTemplateForm").reset();
+  $("#saveTemplateDialog").showModal();
+}
+
+function saveProjectTemplate(event) {
+  event.preventDefault();
+  const project = currentProject();
+  const name = event.currentTarget.elements.templateName.value.trim();
+  if (!project || !name) return;
+  try {
+    const templates = readProjectTemplates();
+    if (templates.some((template) => template.name.toLowerCase() === name.toLowerCase())) {
+      alert("A template with that name already exists.");
+      return;
+    }
+    templates.push(buildProjectTemplate(project, name));
+    localStorage.setItem(TEMPLATE_KEY, JSON.stringify(templates));
+    $("#saveTemplateDialog").close();
+    setSaveStatus("Local Template Saved", "saved");
+  } catch (error) {
+    console.error("Template save failed", error);
+    alert("Could not save the template to this browser.");
+  }
+}
+
+function deleteSelectedTemplate() {
+  try {
+    const selected = selectedProjectTemplate();
+    if (!selected || !confirm(`Delete template "${selected.name}"? Existing projects will not change.`)) return;
+    const templates = readProjectTemplates().filter((template) => template.id !== selected.id);
+    localStorage.setItem(TEMPLATE_KEY, JSON.stringify(templates));
+    refreshProjectTemplateSelect();
+  } catch (error) {
+    alert("Could not delete the project template.");
+  }
 }
 
 function saveProjectFromForm(event) {
@@ -672,22 +807,34 @@ function saveProjectFromForm(event) {
   const form = event.currentTarget;
   const data = getFormValues(form);
   const timestamp = nowIso();
+  let createdProject;
 
   if (editingProjectId) {
     const project = projects.find((item) => item.id === editingProjectId);
     Object.assign(project, data, { updatedAt: timestamp });
   } else {
-    projects.unshift({
+    let structure = { storyboards: [] };
+    try {
+      const template = selectedProjectTemplate();
+      if (template) structure = instantiateProjectTemplate(template, data.platforms, timestamp);
+    } catch (error) {
+      alert("Could not create a project from this template.");
+      return;
+    }
+    createdProject = {
       id: uid("project"),
       ...data,
       createdAt: timestamp,
       updatedAt: timestamp,
-      storyboards: []
-    });
+      ...structure
+    };
+    projects.unshift(createdProject);
   }
   if (saveProjects()) {
     form.closest("dialog").close();
     render();
+  } else if (createdProject) {
+    projects.shift();
   }
 }
 
@@ -702,6 +849,10 @@ function renderProjectDetail() {
   $("#projectSubtitle").textContent = `${project.clientName || "No client"} / ${project.brandName || "No brand"} · ${project.shootingDate || "No shooting date"} · ${project.platforms.join(", ")}`;
   ensureProjectSequences(project);
   renderSequenceTabs(project);
+  const missingButton = $("#missingShotsBtn");
+  if (missingButton) {
+    missingButton.textContent = `Missing Must-Haves (${missingMustHaveShots(project).length})`;
+  }
   hydrateShotFilters(project);
   renderDashboard(project);
   updateStorageHealth();
@@ -791,6 +942,7 @@ function renderShots(project) {
   $$("#shotCards [data-action]").forEach((button) => button.addEventListener("click", handleShotAction));
   $$("#shotTableBody [data-status-shot]").forEach((select) => select.addEventListener("change", updateShotStatus));
   $$("#shootMode [data-shoot-status]").forEach((button) => button.addEventListener("click", updateShootModeStatus));
+  $$("#shootMode [data-take-log]").forEach((button) => button.addEventListener("click", () => openTakeLog(button.dataset.takeLog)));
   $$(".shot-card").forEach(bindDragEvents);
   hydrateReferenceImages();
   renderShootProgress(shots);
@@ -916,6 +1068,7 @@ function shotCardHTML(shot) {
       </div>
       <div class="shot-actions no-print">
         <button class="ghost" data-action="edit" data-id="${shot.id}" type="button">Edit</button>
+        <button class="ghost" data-action="take-log" data-id="${shot.id}" type="button">Take Log</button>
         <button class="ghost" data-action="duplicate" data-id="${shot.id}" type="button">Duplicate</button>
         <button class="ghost" data-action="prompt" data-id="${shot.id}" type="button">Generate Image Prompt</button>
         <button class="ghost" data-action="add-sequence" data-id="${shot.id}" type="button">Add to Sequence</button>
@@ -937,6 +1090,7 @@ function referenceImageHTML(image) {
 function shootModeCardHTML(shot) {
   const isMust = shot.isMustHave || shot.priority === "Must Have";
   const needsReshoot = shot.status === "Need Reshoot";
+  const take = normalizeTakeLog(shot.takeLog);
   return `
     <article class="shoot-card ${isMust ? "must-shoot" : ""}" data-shot-id="${shot.id}">
       <div class="shoot-head">
@@ -956,6 +1110,8 @@ function shootModeCardHTML(shot) {
         <button data-shoot-status="Shot" data-id="${shot.id}" type="button">Shot</button>
         <button data-shoot-status="Need Reshoot" data-id="${shot.id}" type="button">Need Reshoot</button>
       </div>
+      ${take.clipId || take.selectedTake ? `<p class="hint take-log-summary">${escapeHTML([take.clipId, take.selectedTake].filter(Boolean).join(" / "))}</p>` : ""}
+      <button class="ghost take-log-button no-print" data-take-log="${escapeHTML(shot.id)}" type="button">Take Log</button>
     </article>`;
 }
 
@@ -1058,6 +1214,7 @@ function createBlankShot(order) {
     captionIdea: "",
     aiImagePrompt: "",
     referenceImages: [],
+    takeLog: normalizeTakeLog(),
     notes: "",
     order
   };
@@ -1094,6 +1251,7 @@ function handleShotAction(event) {
   const project = currentProject();
   const shot = project.storyboards.find((item) => item.id === id);
   if (action === "edit") openShotDialog(shot);
+  if (action === "take-log") openTakeLog(id);
   if (action === "duplicate") duplicateShot(shot);
   if (action === "delete" && confirm(`Deleting this master shot will remove it from all sequences. Delete shot ${shot.shotNumber}?`)) deleteShot(id);
   if (action === "add-sequence") addShotToSequencePrompt(id);
@@ -1105,6 +1263,42 @@ function handleShotAction(event) {
   if (action === "up" || action === "down") moveShot(id, action, event.currentTarget.dataset.refId);
 }
 
+function normalizeTakeLog(value) {
+  return {
+    clipId: typeof value?.clipId === "string" ? value.clipId : "",
+    selectedTake: typeof value?.selectedTake === "string" ? value.selectedTake : "",
+    setNotes: typeof value?.setNotes === "string" ? value.setNotes : ""
+  };
+}
+
+function openTakeLog(shotId) {
+  const shot = currentProject()?.storyboards.find((item) => item.id === shotId);
+  const dialog = $("#takeLogDialog");
+  if (!shot || !dialog) return;
+  takeLogShot = shot;
+  $("#takeLogTitle").textContent = `Take Log: ${shot.shotNumber}`;
+  setFormValues($("#takeLogForm"), normalizeTakeLog(shot.takeLog));
+  dialog.showModal();
+}
+
+function saveTakeLog(event) {
+  event.preventDefault();
+  const project = currentProject();
+  if (!project?.storyboards.includes(takeLogShot)) return;
+  const previous = takeLogShot.takeLog;
+  const updatedAt = project.updatedAt;
+  takeLogShot.takeLog = normalizeTakeLog(getFormValues(event.currentTarget));
+  project.updatedAt = nowIso();
+  if (!saveProjects()) {
+    takeLogShot.takeLog = previous;
+    project.updatedAt = updatedAt;
+    return;
+  }
+  takeLogShot = null;
+  $("#takeLogDialog").close();
+  renderProjectDetail();
+}
+
 function duplicateShot(shot) {
   const project = currentProject();
   const copy = JSON.parse(JSON.stringify(shot));
@@ -1112,6 +1306,7 @@ function duplicateShot(shot) {
   copy.shotNumber = `${shot.shotNumber}B`;
   copy.order = project.storyboards.length + 1;
   copy.status = "Not Shot";
+  copy.takeLog = normalizeTakeLog();
   project.storyboards.push(copy);
   project.updatedAt = nowIso();
   if (saveProjects()) renderProjectDetail();
@@ -1226,29 +1421,154 @@ function updateShotStatus(event) {
   if (saveProjects()) renderProjectDetail();
 }
 
-async function importPhotoShots(event) {
+function missingMustHaveShots(project) {
+  return sortedShots(project).filter((shot) =>
+    (shot.isMustHave || shot.priority === "Must Have") &&
+    (shot.status === "Not Shot" || shot.status === "Need Reshoot"));
+}
+
+function showMissingShots() {
+  const project = currentProject();
+  if (!project) return;
+  const shots = missingMustHaveShots(project);
+  const memberships = new Map(shots.map((shot) => [shot.id, []]));
+  const summary = project.sequences.map((sequence) => {
+    const ids = new Set(sequence.shotRefs.map((ref) => ref.shotId).filter((id) => memberships.has(id)));
+    for (const id of ids) memberships.get(id).push(sequence.name);
+    return `<span class="tag">${escapeHTML(sequence.name)}: ${ids.size}</span>`;
+  }).join("");
+  $("#missingShotsOutput").innerHTML = `
+    <p><strong>${shots.length}</strong> unique must-have shots remaining</p>
+    <div class="missing-shot-tags">${summary}</div>
+    ${shots.length ? `<ul class="missing-shot-list">${shots.map((shot) => `
+      <li>
+        <strong>${escapeHTML(shot.shotNumber)}: ${escapeHTML(shot.scene || shot.description || "Untitled Shot")}</strong>
+        <div class="missing-shot-tags">
+          <span class="tag ${shot.status === "Need Reshoot" ? "reshoot" : ""}">${escapeHTML(shot.status)}</span>
+          ${(memberships.get(shot.id).length ? memberships.get(shot.id) : ["Master only"])
+            .map((name) => `<span class="tag">${escapeHTML(name)}</span>`).join("")}
+        </div>
+        ${shot.location ? `<div class="hint">${escapeHTML(shot.location)}</div>` : ""}
+      </li>`).join("")}</ul>` : '<p class="hint">All must-have shots are complete.</p>'}`;
+  $("#missingShotsDialog").showModal();
+}
+
+function previewPhotoShots(event) {
   const input = event.currentTarget;
   const files = Array.from(input.files || []);
   input.value = "";
   const project = currentProject();
-  const sequenceId = currentSequenceId;
   if (!project || !files.length) return;
   if (!imageDbAvailable) {
     alert("IndexedDB is unavailable. Photos cannot be imported in this browser.");
     return;
   }
-  const button = $("#importPhotoShotsBtn");
-  if (button.disabled) return;
-  button.disabled = true;
+
+  if (photoImportDraft?.busy) return;
+  clearPhotoImport();
+  const form = $("#photoImportForm");
+  form.reset();
+  const sequence = form.elements.sequenceId;
+  sequence.replaceChildren(new Option("All Shots / Master", "master"));
+  for (const item of project.sequences) sequence.add(new Option(item.name, item.id));
+  sequence.value = currentSequenceId;
+  fillSelect(form.elements.priority, OPTIONS.priorities);
+  form.elements.priority.value = "Good to Have";
+  photoImportDraft = {
+    project,
+    items: files.map((file) => ({ file, url: URL.createObjectURL(file) })),
+    draggedIndex: null,
+    busy: false
+  };
+  renderPhotoImportList();
+  $("#photoImportDialog").showModal();
+}
+
+function clearPhotoImport() {
+  if (!photoImportDraft || photoImportDraft.busy || $("#photoImportDialog").open) return;
+  photoImportDraft.items.forEach(({ url }) => URL.revokeObjectURL(url));
+  photoImportDraft = null;
+  $("#photoImportList").replaceChildren();
+  $("#photoImportProgress").textContent = "";
+}
+
+function renderPhotoImportList() {
+  const draft = photoImportDraft;
+  const list = $("#photoImportList");
+  const count = draft.items.length;
+  list.innerHTML = draft.items.map(({ file, url }, index) => `
+    <li>
+      <span class="photo-drag" draggable="true" aria-hidden="true">&#8942;&#8942;</span>
+      <img src="${escapeHTML(url)}" alt="" draggable="false" loading="lazy">
+      <span class="photo-file-name">${index + 1}. ${escapeHTML(file.name)}</span>
+      <div class="photo-row-actions">
+        <button class="ghost" type="button" data-photo-action="up" aria-label="Move photo ${index + 1} up" title="Move up" ${index === 0 ? "disabled" : ""}>&uarr;</button>
+        <button class="ghost" type="button" data-photo-action="down" aria-label="Move photo ${index + 1} down" title="Move down" ${index === count - 1 ? "disabled" : ""}>&darr;</button>
+        <button class="ghost" type="button" data-photo-action="remove" aria-label="Remove photo ${index + 1}" title="Remove photo">&times;</button>
+      </div>
+    </li>`).join("");
+  $("#createPhotoShotsBtn").textContent = `Create ${count} Shot${count === 1 ? "" : "s"}`;
+  $("#createPhotoShotsBtn").disabled = !count;
+  const move = (from, to) => {
+    if (from === to || to < 0 || to >= draft.items.length) return;
+    const [item] = draft.items.splice(from, 1);
+    draft.items.splice(to, 0, item);
+    renderPhotoImportList();
+  };
+  Array.from(list.children).forEach((row, index) => {
+    row.querySelector(".photo-drag").addEventListener("dragstart", (event) => {
+      if (draft.busy) { event.preventDefault(); return; }
+      draft.draggedIndex = index;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(index));
+    });
+    row.addEventListener("dragend", () => { draft.draggedIndex = null; });
+    row.addEventListener("dragover", (event) => {
+      if (draft.draggedIndex !== null && !draft.busy) event.preventDefault();
+    });
+    row.addEventListener("drop", (event) => {
+      if (draft.draggedIndex === null || draft.busy) return;
+      event.preventDefault();
+      const from = draft.draggedIndex;
+      draft.draggedIndex = null;
+      move(from, index);
+    });
+    row.querySelectorAll("[data-photo-action]").forEach((button) => button.addEventListener("click", () => {
+      const action = button.dataset.photoAction;
+      const to = index + (action === "up" ? -1 : 1);
+      if (action === "remove") {
+        const [item] = draft.items.splice(index, 1);
+        URL.revokeObjectURL(item.url);
+        renderPhotoImportList();
+      } else move(index, to);
+      const nextRow = list.children[action === "remove" ? Math.min(index, draft.items.length - 1) : to];
+      (nextRow?.querySelector(`[data-photo-action="${action}"]:enabled`) ||
+        nextRow?.querySelector("button:enabled") || $("#photoImportForm [data-close-dialog]")).focus();
+    }));
+  });
+}
+
+async function importPhotoShots(event) {
+  event.preventDefault();
+  const draft = photoImportDraft;
+  if (!draft || draft.busy || !draft.items.length) return;
+  const { project } = draft;
+  const { sequenceId, scene, location, priority } = getFormValues(event.currentTarget);
+  const files = draft.items.map(({ file }) => file);
+  const fields = $("#photoImportFields");
+  const button = $("#createPhotoShotsBtn");
+  const cancel = $("#photoImportForm [data-close-dialog]");
+  const progress = $("#photoImportProgress");
+  draft.busy = fields.disabled = button.disabled = cancel.disabled = true;
   const imported = [];
   const failed = [];
   try {
     for (const file of files) {
-      button.textContent = "Importing " + (imported.length + failed.length + 1) + "/" + files.length + "...";
+      progress.textContent = `Importing ${imported.length + failed.length + 1}/${files.length}...`;
       try {
         const blob = await imageToBlob(file, 1600, .82);
         const id = uid("ref");
-        const indexedDbKey = "image_" + id;
+        const indexedDbKey = `image_${id}`;
         await saveImageBlob(indexedDbKey, blob);
         imported.push({ id, fileName: file.name, type: "Client Reference", indexedDbKey, createdAt: nowIso() });
       } catch (error) {
@@ -1256,11 +1576,13 @@ async function importPhotoShots(event) {
         console.warn("Could not import photo", file.name, error);
       }
     }
+
     if (!projects.includes(project)) {
       await Promise.allSettled(imported.map((image) => deleteImageBlob(image.indexedDbKey)));
       alert("The original project is no longer open in this workspace. No shots were added.");
       return;
     }
+
     if (imported.length) {
       let order = project.storyboards.reduce((max, shot) => Math.max(max, shot.order || 0), 0);
       const usedNumbers = new Set(project.storyboards.map((shot) => shot.shotNumber));
@@ -1270,7 +1592,10 @@ async function importPhotoShots(event) {
           ...createBlankShot(order),
           id: uid("shot"),
           platforms: [...project.platforms],
-          scene: image.fileName.replace(/\.[^.]+$/, "") || image.fileName,
+          scene: scene || image.fileName.replace(/\.[^.]+$/, "") || image.fileName,
+          location,
+          priority,
+          isMustHave: priority === "Must Have",
           referenceImages: [image]
         };
         project.storyboards.push(shot);
@@ -1281,10 +1606,13 @@ async function importPhotoShots(event) {
       render();
       if (!saved) alert("The new shots are available on this page. Export a project package before closing it.");
     }
-    if (failed.length) alert(imported.length + " shot(s) created. " + failed.length + " photo(s) could not be imported:\n" + failed.slice(0, 10).join("\n"));
+    if (failed.length) {
+      alert(`${imported.length} shot(s) created. ${failed.length} photo(s) could not be imported:\n${failed.slice(0, 10).join("\n")}${failed.length > 10 ? "\n..." : ""}`);
+    }
   } finally {
-    button.disabled = false;
-    button.textContent = "Import Photos as Shots";
+    draft.busy = fields.disabled = button.disabled = cancel.disabled = false;
+    $("#photoImportDialog").close();
+    clearPhotoImport();
   }
 }
 
@@ -1784,22 +2112,47 @@ function resolvePdfField(shot, accessor) {
   return typeof accessor === "function" ? accessor(shot) : shot[accessor];
 }
 
+function takeLogCells(shot) {
+  const { clipId, selectedTake, setNotes } = normalizeTakeLog(shot.takeLog);
+  return [clipId, selectedTake, setNotes];
+}
+
 function exportCSV() {
-  const headers = ["Shot Number", "Scene", "Description", "Shot Size", "Lens", "Camera Movement", "Location", "Shoot Time", "Priority", "Status", "Shot Purpose", "Product / Brand Focus", "Props", "Sound Notes", "Post Production Notes", "Notes"];
+  const headers = ["Shot Number", "Scene", "Description", "Shot Size", "Lens", "Camera Movement", "Location", "Shoot Time", "Priority", "Status", "Shot Purpose", "Product / Brand Focus", "Props", "Sound Notes", "Post Production Notes", "Notes", "Clip / File IDs", "Selected Take", "Set Notes"];
   const rows = filteredShots().map((shot) => [
-    shot.shotNumber, shot.scene, shot.description, shot.shotSize, shot.lens, shot.cameraMovement, shot.location, shot.shootTime, shot.priority, shot.status, shot.shotPurpose, shot.productOrBrandFocus, shot.props, shot.soundNotes, shot.postProductionNotes, shot.notes
+    shot.shotNumber, shot.scene, shot.description, shot.shotSize, shot.lens, shot.cameraMovement, shot.location, shot.shootTime, shot.priority, shot.status, shot.shotPurpose, shot.productOrBrandFocus, shot.props, shot.soundNotes, shot.postProductionNotes, shot.notes, ...takeLogCells(shot)
   ]);
   const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
   const sequenceSuffix = currentSequenceId === "master" ? "master" : safeFileName(currentSequenceName());
   downloadFile(`${safeFileName(currentProject().title)}-${sequenceSuffix}-shot-list.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
 }
 
+function exportEditorHandoff() {
+  const project = currentProject();
+  if (!project) return;
+  const sequence = currentSequence(project);
+  const headers = ["Order", "Shot Number", "Scene", "Description", "Status", "Duration", "Purpose",
+    "Clip / File IDs", "Selected Take", "Set Notes", "Sequence Notes", "Voice / VO", "Sound Notes",
+    "Music Mood", "Caption Idea", "Post Production Notes"];
+  const rows = sequenceShotEntries(project, sequence).map(({ shot, ref }, index) => [
+    index + 1, shot.shotNumber, shot.scene, shot.description, shot.status,
+    ref?.sequenceDuration || shot.estimatedDuration, ref?.sequencePurpose || shot.shotPurpose,
+    ...takeLogCells(shot), ref?.sequenceNotes, shot.voiceOverNotes, shot.soundNotes,
+    shot.musicMood, shot.captionIdea, shot.postProductionNotes
+  ]);
+  const csv = [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+  const suffix = sequence ? safeFileName(sequence.name) : "master";
+  downloadFile(`${safeFileName(project.title)}-${suffix}-editor-handoff.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
+}
+
 function csvCell(value) {
-  return `"${String(value || "").replace(/"/g, '""')}"`;
+  const text = String(value ?? "");
+  const safeText = /^[\s\uFEFF]*[=+@-]|^[\t\r\n]/.test(text) ? "'" + text : text;
+  return `"${safeText.replace(/"/g, '""')}"`;
 }
 
 function exportJSON() {
-  downloadFile("fusion-storyboard-os-v4-2-local-backup.json", JSON.stringify({ version: "4.2", schemaVersion: SCHEMA_VERSION, exportedAt: nowIso(), imageStorage: "IndexedDB metadata only", projects: stripImageDataFromProjects(projects) }, null, 2), "application/json");
+  downloadFile("fusion-storyboard-os-v4-3-local-backup.json", JSON.stringify({ version: APP_VERSION, schemaVersion: SCHEMA_VERSION, exportedAt: nowIso(), imageStorage: "IndexedDB metadata only", projects: stripImageDataFromProjects(projects) }, null, 2), "application/json");
 }
 
 function openPackageExportDialog() {
@@ -1852,7 +2205,7 @@ async function buildProjectPackageBlob(projectId, options = {}) {
   const manifest = {
     packageVersion: "4.2",
     app: "Fusion Storyboard OS",
-    appVersion: "4.2",
+    appVersion: APP_VERSION,
     schemaVersion: SCHEMA_VERSION,
     exportedAt: nowIso(),
     packageScope: options.allProjects ? "all-projects-backup" : "single-project",
@@ -2870,9 +3223,3 @@ function createDemoProject() {
 
 window.generateStoryboardFromScript = generateStoryboardFromScript;
 window.removePendingReference = removePendingReference;
-
-
-
-
-
-

@@ -404,6 +404,49 @@ dialog {
 }
 dialog::backdrop { background: rgba(0, 0, 0, .66); }
 .modal-form { padding: 18px; }
+.template-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.template-fields label { flex: 1 1 180px; min-width: 0; }
+.take-log-summary { overflow-wrap: anywhere; }
+.shoot-card .take-log-button { min-height: 44px; }
+#photoImportDialog { width: min(880px, calc(100vw - 28px)); }
+#photoImportFields { min-width: 0; margin: 0; padding: 0; border: 0; }
+#photoImportProgress { margin-right: auto; color: var(--muted); font-size: 13px; }
+.photo-import-list, .missing-shot-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  border-top: 1px solid var(--line);
+}
+.photo-import-list { max-height: min(45vh, 480px); overflow-y: auto; }
+.photo-import-list li {
+  display: grid;
+  grid-template-columns: 20px 64px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.photo-import-list img {
+  display: block;
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+  background: var(--bg);
+  border-radius: 4px;
+}
+.photo-drag { cursor: grab; color: var(--muted); text-align: center; }
+.photo-file-name, .missing-shot-list li { overflow-wrap: anywhere; }
+.photo-row-actions, .missing-shot-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.photo-row-actions button { min-width: 36px; min-height: 36px; padding: 0; }
+.missing-shot-list li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.missing-shot-list .missing-shot-tags { margin: 6px 0; }
+@media (max-width: 480px) {
+  .photo-import-list li { grid-template-columns: 54px minmax(0, 1fr); gap: 6px 10px; }
+  .photo-import-list img { width: 54px; }
+  .photo-drag { display: none; }
+  .photo-row-actions { grid-column: 2; }
+  .photo-row-actions button { min-width: 44px; min-height: 44px; }
+}
 .modal-form.wide { width: min(1080px, calc(100vw - 28px)); }
 .modal-head { margin-bottom: 16px; }
 .icon-btn {

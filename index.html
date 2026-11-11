@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fusion Storyboard OS V4.2</title>
+  <title>Fusion Storyboard OS V4.3</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="./style.css">
   <script src="./config.js"></script>
@@ -14,7 +14,7 @@
   <header class="topbar no-print">
     <div>
       <p class="eyebrow">Commercial Storyboard Planning</p>
-      <h1>Fusion Storyboard OS V4.2</h1>
+      <h1>Fusion Storyboard OS V4.3</h1>
     </div>
     <div class="top-actions">
       <span id="saveStatus" class="save-status saved">Local Saved</span>
@@ -84,6 +84,8 @@
             </select>
             <button id="exportPdfBtn" class="ghost" type="button">Export PDF</button>
             <button id="exportCsvBtn" class="ghost" type="button">Export CSV</button>
+            <button id="editorHandoffBtn" class="ghost" type="button">Editor Handoff CSV</button>
+            <button id="saveTemplateBtn" class="ghost" type="button">Save as Template</button>
           </div>
         </div>
 
@@ -118,6 +120,7 @@
             <button id="shootModeBtn" type="button">Shoot Mode</button>
           </div>
           <div class="workbar-actions">
+            <button id="missingShotsBtn" class="ghost" type="button">Missing Must-Haves</button>
             <button id="scriptToolBtn" class="ghost" type="button">Script to Storyboard</button>
             <button id="renumberBtn" class="ghost" type="button">Renumber</button>
             <button id="optimizeBtn" class="ghost" type="button">Optimize Shooting Order</button>
@@ -190,6 +193,37 @@
   </main>
 
 
+  <dialog id="photoImportDialog" aria-labelledby="photoImportTitle">
+    <form id="photoImportForm" class="modal-form">
+      <div class="modal-head"><h3 id="photoImportTitle">Import Photos as Shots</h3></div>
+      <fieldset id="photoImportFields">
+        <div class="form-grid">
+          <label>Sequence <select name="sequenceId"></select></label>
+          <label>Priority <select name="priority"></select></label>
+          <label>Scene <input name="scene" placeholder="Use photo filenames"></label>
+          <label>Location <input name="location"></label>
+        </div>
+        <ol id="photoImportList" class="photo-import-list"></ol>
+      </fieldset>
+      <div class="modal-actions">
+        <span id="photoImportProgress" role="status"></span>
+        <button type="button" class="ghost" data-close-dialog>Cancel</button>
+        <button id="createPhotoShotsBtn" type="submit" class="primary">Create Shots</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="missingShotsDialog" aria-labelledby="missingShotsTitle">
+    <div class="modal-form">
+      <div class="modal-head">
+        <h3 id="missingShotsTitle">Missing Must-Have Shots</h3>
+        <button class="icon-btn" type="button" aria-label="Close" data-close-dialog>&times;</button>
+      </div>
+      <div id="missingShotsOutput"></div>
+      <div class="modal-actions"><button class="ghost" type="button" data-close-dialog>Close</button></div>
+    </div>
+  </dialog>
+
   <dialog id="sequencePickerDialog">
     <form method="dialog" class="modal-form sequence-picker-form">
       <div class="modal-head">
@@ -202,6 +236,32 @@
       </div>
     </form>
   </dialog>
+  <dialog id="takeLogDialog" aria-labelledby="takeLogTitle">
+    <form id="takeLogForm" class="modal-form">
+      <div class="modal-head"><h3 id="takeLogTitle">Take Log</h3></div>
+      <div class="form-grid">
+        <label>Clip / File IDs<input name="clipId" maxlength="250" placeholder="C0042"></label>
+        <label>Selected Take<input name="selectedTake" maxlength="80" placeholder="Take 3"></label>
+        <label class="span-2">Set Notes<textarea name="setNotes" rows="4" maxlength="2000"></textarea></label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close-dialog>Cancel</button>
+        <button type="submit" class="primary">Save Take Log</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="saveTemplateDialog" aria-labelledby="saveTemplateTitle">
+    <form id="saveTemplateForm" class="modal-form">
+      <div class="modal-head"><h3 id="saveTemplateTitle">Save Project Template</h3></div>
+      <label>Template Name<input name="templateName" maxlength="80" required></label>
+      <div class="modal-actions">
+        <button type="button" class="ghost" data-close-dialog>Cancel</button>
+        <button type="submit" class="primary">Save Template</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="projectDialog">
     <form id="projectForm" method="dialog" class="modal-form">
       <div class="modal-head">
@@ -209,6 +269,10 @@
         <button class="icon-btn" value="cancel" type="button" data-close-dialog>&times;</button>
       </div>
       <div class="form-grid">
+        <div id="projectTemplateFields" class="span-2 template-fields">
+          <label>Project Template<select id="projectTemplateSelect"></select></label>
+          <button id="deleteTemplateBtn" class="ghost" type="button" disabled>Delete Template</button>
+        </div>
         <label>Project Name<input name="title" required></label>
         <label>Client Name<input name="clientName"></label>
         <label>Brand Name<input name="brandName"></label>
