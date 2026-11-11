@@ -339,10 +339,26 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .reference-image {
   width: 100%;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
+  object-fit: contain;
   background: #111315;
   border: 1px solid var(--line);
   border-radius: 6px;
+}
+@media screen {
+  .shot-card .reference-strip,
+  .shoot-card .reference-strip {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+  }
+  .reference-strip .reference-image {
+    display: block;
+    aspect-ratio: 4 / 3;
+    max-height: 320px;
+  }
+  .shot-reference-cell .reference-strip {
+    width: 144px;
+    grid-template-columns: minmax(0, 1fr);
+    margin-bottom: 0;
+  }
 }
 .missing-image {
   border-style: dashed;
@@ -497,7 +513,7 @@ label {
 .reference-preview img {
   width: 100%;
   aspect-ratio: 16 / 10;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 6px;
   border: 1px solid var(--line);
 }

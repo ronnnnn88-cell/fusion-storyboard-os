@@ -936,15 +936,15 @@ function renderShots(project) {
   $("#shootModeTools").classList.toggle("hidden", currentView !== "shoot");
 
   $("#shotCards").innerHTML = shots.length ? shots.map(shotCardHTML).join("") : `<div class="empty">No shots yet. Add a shot or generate from a script.</div>`;
-  $("#shotTableBody").innerHTML = shots.map(shotRowHTML).join("");
-  $("#shootMode").innerHTML = shots.length ? shootModeGroupsHTML(shots) : `<div class="empty">No shots match the current filters.</div>`;
+  $("#shotTableBody").innerHTML = currentView === "list" ? shots.map(shotRowHTML).join("") : "";
+  $("#shootMode").innerHTML = currentView !== "shoot" ? "" : shots.length ? shootModeGroupsHTML(shots) : `<div class="empty">No shots match the current filters.</div>`;
 
   $$("#shotCards [data-action]").forEach((button) => button.addEventListener("click", handleShotAction));
   $$("#shotTableBody [data-status-shot]").forEach((select) => select.addEventListener("change", updateShotStatus));
   $$("#shootMode [data-shoot-status]").forEach((button) => button.addEventListener("click", updateShootModeStatus));
   $$("#shootMode [data-take-log]").forEach((button) => button.addEventListener("click", () => openTakeLog(button.dataset.takeLog)));
   $$(".shot-card").forEach(bindDragEvents);
-  hydrateReferenceImages();
+  hydrateReferenceImages($("#projectDetailView"));
   renderShootProgress(shots);
 }
 
@@ -1040,7 +1040,6 @@ function focusNextShootCard() {
 }
 
 function shotCardHTML(shot) {
-  const images = shot.referenceImages || [];
   const sequenceRef = shot.__sequenceRefId ? { id: shot.__sequenceRefId } : sequenceRefForShot(shot.id);
   const inSequence = currentSequenceId !== "master";
   return `
@@ -1056,7 +1055,7 @@ function shotCardHTML(shot) {
           ${shot.isHook ? `<span class="tag hook">Hook</span>` : ""}
         </div>
       </div>
-      ${images.length ? `<div class="reference-strip">${images.map(referenceImageHTML).join("")}</div>` : ""}
+      ${referenceStripHTML(shot)}
       <p class="shot-description">${escapeHTML(shot.description || "No description.")}</p>
       <div class="shot-meta">
         <span><b>Size</b> ${escapeHTML(shot.shotSize)}</span>
@@ -1081,10 +1080,15 @@ function shotCardHTML(shot) {
     </article>`;
 }
 
+function referenceStripHTML(shot) {
+  const images = shot.referenceImages || [];
+  return images.length ? `<div class="reference-strip">${images.map(referenceImageHTML).join("")}</div>` : "";
+}
+
 function referenceImageHTML(image) {
-  const key = image.indexedDbKey || image.dataUrl || "";
+  const key = image.indexedDbKey || "";
   const src = image.dataUrl || "";
-  return `<img class="reference-image" data-preview-image="true" data-file-name="${escapeHTML(image.fileName)}" data-image-key="${escapeHTML(key)}" ${src ? `src="${src}"` : ""} alt="${escapeHTML(image.fileName)}">`;
+  return `<img class="reference-image" data-preview-image="true" data-file-name="${escapeHTML(image.fileName)}" data-image-key="${escapeHTML(key)}" ${src ? `src="${escapeHTML(src)}"` : ""} alt="${escapeHTML(image.fileName)}" draggable="false">`;
 }
 
 function shootModeCardHTML(shot) {
@@ -1097,6 +1101,7 @@ function shootModeCardHTML(shot) {
         <strong>${escapeHTML(shot.shotNumber)}</strong>
         <span class="tag ${statusClass(shot.status)}">${escapeHTML(shot.status)}</span>
       </div>
+      ${referenceStripHTML(shot)}
       <p>${escapeHTML(shot.description || "No description.")}</p>
       <div class="shoot-meta">
         <span><b>Location</b> ${escapeHTML(shot.location || "-")}</span>
@@ -1133,6 +1138,7 @@ function shotRowHTML(shot) {
   return `
     <tr>
       <td>${escapeHTML(shot.shotNumber)}</td>
+      <td class="shot-reference-cell">${referenceStripHTML(shot) || "&ndash;"}</td>
       <td>${escapeHTML(shot.scene)}</td>
       <td>${escapeHTML(shot.description)}</td>
       <td>${escapeHTML(shot.shotSize)}</td>
@@ -1715,8 +1721,10 @@ function deleteImageBlob(key) {
 }
 
 async function hydrateReferenceImages(root = document) {
+  bindImagePreviewEvents(root);
   const images = Array.from(root.querySelectorAll("img[data-image-key]"));
   for (const img of images) {
+    if (!img.isConnected) continue;
     const key = img.dataset.imageKey;
     if (!key) continue;
     if (imageObjectUrls.has(key)) {
@@ -1724,16 +1732,16 @@ async function hydrateReferenceImages(root = document) {
       continue;
     }
     const blob = await getImageBlob(key);
+    if (!img.isConnected) continue;
     if (blob) {
-      const objectUrl = URL.createObjectURL(blob);
+      const objectUrl = imageObjectUrls.get(key) || URL.createObjectURL(blob);
       imageObjectUrls.set(key, objectUrl);
       img.src = objectUrl;
-    } else {
+    } else if (!img.hasAttribute("src")) {
       img.alt = `${img.alt || "Reference image"} missing from IndexedDB`;
       img.classList.add("missing-image");
     }
   }
-  bindImagePreviewEvents(root);
 }
 
 function bindImagePreviewEvents(root = document) {
@@ -1823,7 +1831,7 @@ function renderReferencePreview() {
       <span class="hint">${escapeHTML(image.fileName)} · ${escapeHTML(image.type || "reference")}</span>
       <button class="danger" type="button" onclick="removePendingReference('${image.id}')">Remove Image</button>
     </div>`).join("");
-  hydrateReferenceImages();
+  hydrateReferenceImages($("#referencePreview"));
 }
 
 async function removePendingReference(id) {
